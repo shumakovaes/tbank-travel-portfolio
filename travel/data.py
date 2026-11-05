@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import numpy as np
 import pandas as pd
 
 SOURCE_COMMIT = 'd69b9db256cee03e6983d8b78e5b82d50b127401'
@@ -29,6 +30,8 @@ def prepare(raw):
         if c not in raw:
             raw[c] = pd.NA
     order_mask = raw.order_type_cd.isin(['AIR', 'HOT'])
+    if (raw.order_type_cd.notna() & ~order_mask).any():
+        raise ValueError('Неизвестный тип заказа: допустимы AIR/HOT или пропуск для клиентской строки')
     quality = {'source_rows': len(raw), 'source_clients': int(raw.client_rk.nunique()),
                'non_order_rows': int((~order_mask).sum()),
                'non_order_clients': int(raw.loc[~order_mask, 'client_rk'].nunique()),
@@ -48,7 +51,7 @@ def prepare(raw):
         orders[c] = numeric(orders[c])
     orders['is_success'] = orders.order_status_cd.eq('SUC').fillna(False)
     orders['status_known'] = orders.order_status_cd.notna()
-    orders['valid_amount'] = orders.nominal_price_rub_amt.notna() & orders.nominal_price_rub_amt.ge(0)
+    orders['valid_amount'] = (np.isfinite(orders.nominal_price_rub_amt) & orders.nominal_price_rub_amt.ge(0)).fillna(False)
     orders['month'] = orders.created_dttm.dt.to_period('M')
     orders['lead_days'] = (orders.book_start_dttm.dt.normalize() - orders.created_dttm.dt.normalize()).dt.days
     orders['stay_nights'] = (orders.book_end_dttm.dt.normalize() - orders.book_start_dttm.dt.normalize()).dt.days

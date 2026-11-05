@@ -3,7 +3,6 @@ from math import ceil, sqrt
 from statistics import NormalDist
 import base64
 import html
-import json
 import pandas as pd
 
 
@@ -17,31 +16,40 @@ def experiment_sizes(baseline):
         za, zb = NormalDist().inv_cdf(.975), NormalDist().inv_cdf(.8)
         n = ceil((za*sqrt(2*mean*(1-mean)) + zb*sqrt(p0*(1-p0)+p1*(1-p1)))**2/(p1-p0)**2)
         rows.append({'relative_mde':lift,'baseline':p0,'target':p1,'clients_per_group':n,'total_clients':2*n})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=['relative_mde', 'baseline', 'target', 'clients_per_group', 'total_clients'])
 
 
 def num(x):
+    if pd.isna(x):
+        return 'нет данных'
     return f'{x:,.0f}'.replace(',', ' ')
+
+
+def pct(x):
+    return 'нет данных' if pd.isna(x) else f'{x:.2%}'
 
 
 def write_reports(tables, quality, figures, out):
     out=Path(out)
-    s=tables['product_summary'].set_index('product')
+    s=tables['product_summary'].set_index('product').reindex(['AIR', 'HOT'])
     cross=tables['cross_sell'].set_index('window_days').loc[30]
     m=tables['monthly_orders']
     full=m.loc[~m.exclude_from_full_month_comparison].groupby('month').orders.sum()
-    peak=full.idxmax()
-    p=tables['promo_coverage'].set_index('product').loc['HOT']
+    peak_text = (f'Максимум заказов среди месяцев до последнего наблюдаемого — {full.idxmax()}: {num(full.max())}.'
+                 if not full.empty else 'Для сравнения месячных объёмов недостаточно периодов.')
+    p=tables['promo_coverage'].set_index('product').reindex(['HOT']).loc['HOT']
     start=quality['period_start'][:10]
     end=quality['period_end'][:10]
     bullets=[
         f"В выборке {num(quality['source_rows'])} строк и {num(quality['orders'])} заказов за {start} — {end}. {num(quality['non_order_rows'])} строк без типа заказа учитываются отдельно.",
-        f"У {num(cross.hotel_clients)} из {num(cross.eligible_clients)} подходящих клиентов есть успешный заказ отеля в течение 30 дней после первой наблюдаемой успешной покупки авиабилета: {cross.cross_sell_share:.2%}. 95% интервал Wilson: {cross.wilson_lower:.2%}–{cross.wilson_upper:.2%}.",
+        (f"У {num(cross.hotel_clients)} из {num(cross.eligible_clients)} подходящих клиентов есть успешный заказ отеля в течение 30 дней после первой наблюдаемой успешной покупки авиабилета: {pct(cross.cross_sell_share)}. 95% интервал Wilson: {pct(cross.wilson_lower)}–{pct(cross.wilson_upper)}."
+         if cross.eligible_clients else 'Нет клиентов с полным 30-дневным окном: доля кросс-продаж и её интервал не оцениваются.'),
         f"Для 30-дневного окна исключены {num(cross.excluded_short_followup)} клиентов с недостаточным сроком наблюдения и {num(cross.excluded_prior_or_same_time_hot)} клиентов с отелем до или одновременно с авиабилетом.",
-        f"Доля SUC среди всех заказов: авиабилеты {s.loc['AIR','success_share_all']:.2%}, отели {s.loc['HOT','success_share_all']:.2%}. У {num(s.loc['HOT','missing_status'])} гостиничных заказов статус отсутствует. Среди известных статусов HOT доля SUC равна {s.loc['HOT','success_share_known']:.2%}; это другой знаменатель, а не улучшение конверсии.",
+        f"Доля SUC среди всех заказов: авиабилеты {pct(s.loc['AIR','success_share_all'])}, отели {pct(s.loc['HOT','success_share_all'])}. Гостиничных заказов без статуса: {num(s.loc['HOT','missing_status'])}. Среди известных статусов HOT доля SUC: {pct(s.loc['HOT','success_share_known'])}; это другой знаменатель, а не улучшение конверсии.",
         f"Медианная цена успешного заказа: авиабилеты {num(s.loc['AIR','median_successful_booking_rub'])} ₽, отели {num(s.loc['HOT','median_successful_booking_rub'])} ₽. Точные значения без округления сохранены в CSV.",
-        f"Максимум заказов среди полных наблюдаемых месяцев — {peak}: {num(full.max())}. Ноябрь неполный, декабрь отсутствует. Одного неполного года недостаточно для вывода об устойчивой сезонности.",
-        f"У {num(p.missing_discount)} из {num(p.orders)} гостиничных заказов ({p.missing_discount/p.orders:.2%}) не заполнена скидка. Пропуск не означает отсутствие промокода; эффект скидок по этому срезу не оценивается.",
+        f"{peak_text} Последний наблюдаемый месяц ({end[:7]}) исключён из сравнения как потенциально неполный. Полнота остальных месяцев требует подтверждения источника; устойчивую сезонность этот расчёт не устанавливает.",
+        (f"У {num(p.missing_discount)} из {num(p.orders)} гостиничных заказов ({pct(p.missing_discount/p.orders)}) не заполнена скидка. Пропуск не означает отсутствие промокода; эффект скидок по этому срезу не оценивается."
+         if pd.notna(p.orders) else 'В выборке нет заказов отелей: покрытие скидок HOT не оценивается.'),
     ]
     method=[
         'Единица анализа — уникальный order_rk для строк AIR/HOT. Клиентские строки без типа заказа исключены из метрик бронирований. Повторяющиеся ID или некорректная дата создания останавливают расчёт.',
@@ -51,7 +59,7 @@ def write_reports(tables, quality, figures, out):
         'Конец наблюдения принят равным максимальной дате создания заказа в CSV. Это техническая граница выгрузки, не подтверждённая дата окончания сбора всех событий. Связь заказов с одной поездкой не установлена; история до января и покупки вне сервиса не наблюдаются.',
         'Когорты строятся по первой наблюдаемой SUC-покупке, а не по привлечению нового клиента. Retention M1 — доля клиентов когорты с SUC в следующем календарном месяце. M0 всегда 100%. Последний месяц исключён, будущие клетки остаются пустыми.',
         'Глубина бронирования отелей — разность календарных дат заезда и создания заказа. Время суток обнуляется, чтобы покупка в день заезда не становилась отрицательным lead time. Единого подтверждённого часового пояса нет; близкие к полуночи случаи требуют проверки источника.',
-        'Для медианы и среднего используются только SUC с известной неотрицательной суммой. Выбросы не обрезаются. Интервалы Wilson относятся к клиентской доле кросс-продаж и не учитывают смещение отбора выборки.',
+        'Для медианы и среднего используются только SUC с известной конечной неотрицательной суммой. Выбросы не обрезаются. Интервалы Wilson относятся к клиентской доле кросс-продаж и не учитывают смещение отбора выборки.',
     ]
     experiment=[
         'Гипотеза: релевантный блок отелей после успешной покупки авиабилета увеличит долю клиентов, бронирующих отель в течение 30 дней.',
@@ -65,7 +73,7 @@ def write_reports(tables, quality, figures, out):
     changes=[
         'Длинный Colab-скрипт заменён модулями загрузки, метрик, графиков и отчёта; запуск через CLI без ручного редактирования путей.',
         'Разделены строки клиентов и заказы; добавлены проверки ключей, дат, денежных значений и покрытия статусов.',
-        'Уточнены финансовые определения; убраны выводы о выручке банка, LTV и декабрьском пике.',
+        'Уточнены финансовые определения; убраны неподтверждённые выводы о выручке банка, LTV и сезонности.',
         'Кросс-продажи пересчитаны с одним якорем на клиента, исключением ранних HOT и контролем полного окна.',
         'В когортной таблице различаются ноль повторных покупок и ещё не наблюдавшийся период.',
         'Добавлены SQL-запросы с автоматической сверкой против pandas, тесты граничных случаев, проверка SHA-256 и выполненный ноутбук.',
@@ -87,17 +95,20 @@ def write_reports(tables, quality, figures, out):
     body=f'<header><div class="eyebrow">Портфолио · продуктовая аналитика</div><h1>{title}</h1><p>Бронирования, повторные покупки и гипотеза «авиабилет → отель»</p><div class="muted">{start} — {end} · публичная учебная выборка · расчёты на Python и SQL</div></header>'
     body+='<div class="cards">'+''.join(f'<div class="card"><div class="muted">{label}</div><div class="value">{value}</div><div class="muted">{note}</div></div>' for label,value,note in [
         ('Заказов',num(quality['orders']),'AIR и HOT после проверки'),
-        ('Кросс-продажа за 30 дней',f'{cross.cross_sell_share:.2%}',f'{num(cross.hotel_clients)} / {num(cross.eligible_clients)} клиентов'),
-        ('Интервал Wilson, 95%',f'{cross.wilson_lower:.2%}–{cross.wilson_upper:.2%}','Статистическая неопределённость доли')])+'</div>'
+        ('Кросс-продажа за 30 дней',pct(cross.cross_sell_share),f'{num(cross.hotel_clients)} / {num(cross.eligible_clients)} клиентов'),
+        ('Интервал Wilson, 95%',f'{pct(cross.wilson_lower)}–{pct(cross.wilson_upper)}' if cross.eligible_clients else 'нет данных','Статистическая неопределённость доли')])+'</div>'
     for heading,items in sections:
         body+=f'<section><h2>{heading}</h2><ul>'+''.join(f'<li>{html.escape(x)}</li>' for x in items)+'</ul></section>'
         if heading=='Что показали данные':
-            captions=['Помесячные объёмы: неполный ноябрь выделен серым.','Статус SUC и стоимость успешного бронирования.','Глубина бронирования отелей и цена; n — число SUC-заказов.','Повторные покупки: пустые периоды не заменяются нулями.','В каждом окне используются только клиенты с полным сроком наблюдения.']
+            captions=['Помесячные объёмы: последний наблюдаемый месяц выделен серым.','Статус SUC и стоимость успешного бронирования.','Глубина бронирования отелей и цена; n — число SUC-заказов с корректной ценой.','Повторные покупки: пустые периоды не заменяются нулями.','В каждом окне используются только клиенты с полным сроком наблюдения.']
             for path,caption in zip(figures,captions):
                 encoded=base64.b64encode(path.read_bytes()).decode('ascii')
                 body+=f'<figure><img alt="{html.escape(caption)}" src="data:image/png;base64,{encoded}"><figcaption>{caption}</figcaption></figure>'
         if heading=='Следующий шаг: дизайн A/B-теста':
             t=tables['experiment_plan'].copy()
+            if t.empty:
+                body+='<p>Для заданных относительных MDE размер выборки не рассчитан: нужны базовая доля строго между 0 и 1 и достижимая целевая доля ниже 1.</p>'
+                continue
             for c in ['relative_mde','baseline','target']:
                 t[c]=t[c].map(lambda v:f'{v:.2%}')
             t.columns=['Относительный MDE','Базовая доля','Целевая доля','Клиентов на группу','Всего клиентов']

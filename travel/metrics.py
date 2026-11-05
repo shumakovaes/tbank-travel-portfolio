@@ -53,10 +53,14 @@ def hotel_lead(orders):
     for bucket, s in g.groupby('lead_bucket', observed=True):
         money = s.loc[s.is_success & s.valid_amount, 'nominal_price_rub_amt']
         rows.append({'lead_days': str(bucket), 'orders': len(s), 'successful_orders': int(s.is_success.sum()),
+                     'priced_successful_orders': len(money),
                      'success_share_all': s.is_success.mean(), 'missing_status': int((~s.status_known).sum()),
                      'median_successful_booking_rub': money.median(),
                      'mean_successful_booking_rub': money.mean()})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=['lead_days', 'orders', 'successful_orders',
+                                     'priced_successful_orders', 'success_share_all',
+                                     'missing_status', 'median_successful_booking_rub',
+                                     'mean_successful_booking_rub'])
 
 
 def cohort_retention(orders):

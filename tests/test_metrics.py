@@ -87,3 +87,14 @@ def test_negative_amount_excluded_without_dropping_order():
 def test_all_failed_money_is_unavailable():
     r=summary(prepared([row('a','1',status='ERR')])).iloc[0]
     assert pd.isna(r.successful_booking_value_rub)
+
+
+def test_infinite_amount_excluded_without_dropping_order():
+    o, q = prepare(pd.DataFrame([row('a','1',price='inf'),row('b','2',price='200')]))
+    assert q['invalid_amount_orders'] == 1
+    assert summary(o).iloc[0].successful_booking_value_rub == 200
+
+
+def test_unknown_order_type_rejected_instead_of_counted_as_client_only():
+    with pytest.raises(ValueError, match='тип'):
+        prepared([row('a','1'),row('b','2',product='RAIL')])

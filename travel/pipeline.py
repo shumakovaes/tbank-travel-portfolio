@@ -19,7 +19,9 @@ def verify_sql(orders, tables):
         sql=pd.read_sql_query((ROOT/'sql/product_summary.sql').read_text(encoding='utf-8'),con)
         ref=tables['product_summary'].set_index('product').loc[sql['product']]
         for col in ['orders','successful_orders','successful_booking_value_rub']:
-            np.testing.assert_allclose(sql[col],ref[col],rtol=0,atol=.01,equal_nan=True)
+            actual = pd.to_numeric(sql[col]).to_numpy(dtype=float, na_value=np.nan)
+            expected = ref[col].to_numpy(dtype=float, na_value=np.nan)
+            np.testing.assert_allclose(actual,expected,rtol=0,atol=.01,equal_nan=True)
         sql_month=pd.read_sql_query((ROOT/'sql/monthly_orders.sql').read_text(encoding='utf-8'),con)
         ref_month=tables['monthly_orders'][sql_month.columns].reset_index(drop=True)
         pd.testing.assert_frame_equal(sql_month,ref_month,check_dtype=False)
