@@ -1,0 +1,17 @@
+{
+  "source_rows": 40421,
+  "source_clients": 30380,
+  "non_order_rows": 2368,
+  "non_order_clients": 2368,
+  "unknown_type_rows": 0,
+  "orders": 38053,
+  "order_clients": 28012,
+  "missing_status_orders": 386,
+  "invalid_amount_orders": 0,
+  "missing_lead_orders": 0,
+  "negative_lead_orders": 0,
+  "period_start": "2024-01-01T01:00:34.210732",
+  "period_end": "2024-11-06T19:56:18.048000",
+  "source_sha256": "a8739c64927a7fc4a0398adac55ba8c033ffe7cd67ff42cbf7533bdf8a50c211",
+  "matches_reference": true
+}

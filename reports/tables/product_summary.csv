@@ -1,0 +1,3 @@
+﻿product,orders,clients,successful_orders,missing_status,success_share_all,success_share_known,priced_successful_orders,successful_booking_value_rub,mean_successful_booking_rub,median_successful_booking_rub
+AIR,29737,22268,28822,0,0.9692302518747689,0.9692302518747689,28822,455573073.0,15806.435119006315,10252.5
+HOT,8316,7135,7910,386,0.9511784511784511,0.9974779319041615,7910,94040451.0,11888.805436156763,5648.5
